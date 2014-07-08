@@ -77,6 +77,7 @@ func (c *Client) Start() int {
 	var wg sync.WaitGroup
 	errorChan := make(chan error, len(starters)) // non blocking notify
 
+	//TODO: sender should die after all retrivers are died
 	for _, starter := range starters {
 		wg.Add(1)
 		go func(starter Starter) {
