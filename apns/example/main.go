@@ -12,21 +12,21 @@ import (
 )
 
 var (
-	certFile = flag.String("cert", "", "cert")
-	keyFile  = flag.String("key", "", "key")
-	token    = flag.String("token", "", "token")
+	cerFile = flag.String("cer", "", "cer")
+	keyFile = flag.String("key", "", "key")
+	token   = flag.String("token", "", "token")
 )
 
 func main() {
 	flag.Parse()
 
-	cer, err := tls.LoadX509KeyPair(*certFile, *keyFile)
+	cert, err := tls.LoadX509KeyPair(*cerFile, *keyFile)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	conn, err := tls.Dial("tcp", net.JoinHostPort(apns.SandboxGateway, apns.Port), &tls.Config{
-		Certificates: []tls.Certificate{cer},
+		Certificates: []tls.Certificate{cert},
 	})
 
 	if err != nil {
