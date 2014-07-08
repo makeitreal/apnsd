@@ -48,11 +48,11 @@ func main() {
 		MsgBufferNum: config.Client.Buffer,
 		ShutdownChan: shutdownChan,
 
-		Certificates:   []tls.Certificate{cer},
-		SenderNum:      config.Sender.Num,
-		ApnsAddr:       net.JoinHostPort(config.Apns.Host, config.Apns.Port),
-		ErrorTimeout:   time.Second * time.Duration(config.Sender.ErrorTimeout),
-		ReconnectSleep: time.Second * time.Duration(config.Sender.ReconnectSleep),
+		Certificates:         []tls.Certificate{cer},
+		SenderNum:            config.Sender.Num,
+		ApnsAddr:             net.JoinHostPort(config.Apns.Host, config.Apns.Port),
+		SenderErrorTimeout:   time.Second * time.Duration(config.Sender.ErrorTimeout),
+		SenderReconnectSleep: time.Second * time.Duration(config.Sender.ReconnectSleep),
 
 		RetriverNum:     config.Retriver.Num,
 		RetriverKey:     config.Redis.Key,

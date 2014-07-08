@@ -21,11 +21,11 @@ type Client struct {
 	ShutdownChan chan struct{}
 
 	// sender
-	Certificates   []tls.Certificate
-	SenderNum      int
-	ApnsAddr       string
-	ErrorTimeout   time.Duration
-	ReconnectSleep time.Duration
+	Certificates         []tls.Certificate
+	SenderNum            int
+	ApnsAddr             string
+	SenderErrorTimeout   time.Duration
+	SenderReconnectSleep time.Duration
 
 	// retriver
 	RetriverNum     int
@@ -55,8 +55,8 @@ func (c *Client) Start() int {
 			},
 			apnsAddr:       c.ApnsAddr,
 			identifier:     identifier,
-			errorTimeout:   c.ErrorTimeout,
-			reconnectSleep: c.ReconnectSleep,
+			errorTimeout:   c.SenderErrorTimeout,
+			reconnectSleep: c.SenderReconnectSleep,
 			shutdownChan:   shutdownChan,
 		})
 	}
