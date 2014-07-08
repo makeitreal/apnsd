@@ -9,7 +9,6 @@ type Identifier struct {
 	i uint32
 }
 
-//TODO: generate uniq identifier in 4 bytes or reset
 func (i *Identifier) NextIdentifier() uint32 {
 	defer i.m.Unlock()
 	i.m.Lock()
