@@ -106,7 +106,7 @@ func (r *Retriver) retrive() (*apns.Msg, error) {
 		return nil, err
 	}
 
-	return DecodeMsg(byt)
+	return apns.DecodeMsg(byt)
 }
 
 func (r *Retriver) log(v ...interface{}) {

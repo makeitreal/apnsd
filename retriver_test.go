@@ -76,7 +76,7 @@ func TestRetriverDeque(t *testing.T) {
 		},
 	}
 
-	byt, err := EncodeMsg(orgMsg)
+	byt, err := apns.EncodeMsg(orgMsg)
 	if err != nil {
 		t.Fatal(err)
 	}

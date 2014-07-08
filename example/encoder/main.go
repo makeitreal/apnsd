@@ -7,7 +7,6 @@ import (
 	"net"
 
 	"github.com/garyburd/redigo/redis"
-	"github.com/makeitreal/apnsd"
 	"github.com/makeitreal/apnsd/apns"
 )
 
@@ -42,7 +41,7 @@ func main() {
 		},
 	}
 
-	byt, err := apnsd.EncodeMsg(msg)
+	byt, err := apns.EncodeMsg(msg)
 	if err != nil {
 		log.Fatal(err)
 	}

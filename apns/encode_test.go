@@ -1,30 +1,28 @@
-package apnsd
+package apns
 
 import (
 	"encoding/json"
 	"testing"
-
-	"github.com/makeitreal/apnsd/apns"
 )
 
 func TestEncodeDecode(t *testing.T) {
 
-	orgMsg := &apns.Msg{
+	orgMsg := &Msg{
 		Token:    []byte("hoge"),
 		Priority: 10,
 		Expire:   12345,
-		Payload: apns.Payload{
-			"aps": &apns.Aps{
-				Alert: &apns.Alert{
-					Body: apns.String("hello!"),
+		Payload: Payload{
+			"aps": &Aps{
+				Alert: &Alert{
+					Body: String("hello!"),
 				},
-				Badge: apns.Int(0),
-				Sound: apns.String(""),
+				Badge: Int(0),
+				Sound: String(""),
 			},
 			"fuga":     "foo",
 			"dameleon": 1,
 			"empty":    "",
-			"pointer":  apns.String(""),
+			"pointer":  String(""),
 		},
 	}
 
