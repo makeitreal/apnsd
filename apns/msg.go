@@ -88,12 +88,29 @@ type Aps struct {
 	ContentAvailable *string     `json:"content-available,omitempty"`
 }
 
+//TODO: more good idea
+func (a *Aps) GobDecode(byt []byte) error {
+	return json.Unmarshal(byt, a)
+}
+
+func (a *Aps) GobEncode() ([]byte, error) {
+	return json.Marshal(a)
+}
+
 type Alert struct {
 	Body         *string  `json:"body,omitempty"`
 	ActionLocKey *string  `json:"action-loc-key,omitempty"`
 	LocKey       *string  `json:"loc-key,omitempty"`
 	LocArgs      []string `json:"loc-args,omitempty"`
 	LaunchImage  *string  `json:"launch-image,omitempty"`
+}
+
+func (a *Alert) GobDecode(byt []byte) error {
+	return json.Unmarshal(byt, a)
+}
+
+func (a *Alert) GobEncode() ([]byte, error) {
+	return json.Marshal(a)
 }
 
 type ErrorMsg struct {

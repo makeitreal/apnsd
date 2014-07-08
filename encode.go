@@ -8,7 +8,6 @@ import (
 )
 
 func init() {
-	gob.Register(&apns.Payload{})
 	gob.Register(&apns.Aps{})
 	gob.Register(&apns.Alert{})
 }
