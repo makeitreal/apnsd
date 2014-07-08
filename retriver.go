@@ -12,7 +12,6 @@ import (
 type Retriver struct {
 	c            chan *apns.Msg
 	shutdownChan chan struct{}
-	isShutdown   bool
 	key          string
 	timeout      string
 	redisConn    redis.Conn
@@ -32,7 +31,6 @@ func (r *Retriver) Start() error {
 	go func() {
 		<-r.shutdownChan
 		r.log("recieved shutdown chan")
-		r.shutdown()
 		r.log("close connection", r.closeRedisConn())
 	}()
 
@@ -109,13 +107,6 @@ func (r *Retriver) retrive() (*apns.Msg, error) {
 	}
 
 	return DecodeMsg(byt)
-}
-
-func (r *Retriver) shutdown() {
-	defer r.m.Unlock()
-	r.m.Lock()
-
-	r.isShutdown = true
 }
 
 func (r *Retriver) log(v ...interface{}) {
