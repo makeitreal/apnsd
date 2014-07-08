@@ -11,7 +11,7 @@ import (
 	"github.com/makeitreal/apnsd/apns"
 )
 
-type Sterter interface {
+type Starter interface {
 	Name() string
 	Start() error
 }
@@ -45,10 +45,10 @@ func (c *Client) Start() int {
 	msgChan := make(chan *apns.Msg, c.MsgBufferNum)
 	shutdownChan := make(chan struct{}, 0)
 
-	sterters := make([]Sterter, 0)
+	starters := make([]Starter, 0)
 
 	for i := 0; i < c.SenderNum; i++ {
-		sterters = append(sterters, &Sender{
+		starters = append(starters, &Sender{
 			c: msgChan,
 			tlsConfig: &tls.Config{
 				Certificates: c.Certificates,
@@ -66,7 +66,7 @@ func (c *Client) Start() int {
 	defer redisPool.Close()
 
 	for i := 0; i < c.RetriverNum; i++ {
-		sterters = append(sterters, &Retriver{
+		starters = append(starters, &Retriver{
 			c:            msgChan,
 			redisPool:    redisPool,
 			shutdownChan: shutdownChan,
@@ -76,19 +76,19 @@ func (c *Client) Start() int {
 	}
 
 	var wg sync.WaitGroup
-	errorChan := make(chan error, len(sterters)) // non blocking notify
+	errorChan := make(chan error, len(starters)) // non blocking notify
 
-	for _, sterter := range sterters {
+	for _, starter := range starters {
 		wg.Add(1)
-		go func(sterter Sterter) {
+		go func(starter Starter) {
 			defer wg.Done()
-			c.log("sterter", sterter.Name(), "start")
-			if err := sterter.Start(); err != nil {
-				c.log("sterter", sterter.Name(), "receive err:", err)
+			c.log("starter", starter.Name(), "start")
+			if err := starter.Start(); err != nil {
+				c.log("starter", starter.Name(), "receive err:", err)
 				errorChan <- err
 			}
-			c.log("sterter", sterter.Name(), "is died")
-		}(sterter)
+			c.log("starter", starter.Name(), "is died")
+		}(starter)
 	}
 
 	select {
@@ -102,7 +102,7 @@ func (c *Client) Start() int {
 
 	wg.Wait()
 
-	c.log("all sterter are died")
+	c.log("all starter are died")
 
 	return 1
 }
