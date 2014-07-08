@@ -9,15 +9,15 @@ import (
 	"github.com/makeitreal/apnsd/apns"
 )
 
-//TODO: retriver has one connection to redis. not use pool
 type Retriver struct {
 	c            chan *apns.Msg
-	redisPool    *redis.Pool
 	shutdownChan chan struct{}
 	isShutdown   bool
 	key          string
 	timeout      string
 	redisConn    redis.Conn
+	redisNetwork string
+	redisAddr    string
 	m            sync.Mutex
 }
 
@@ -27,23 +27,19 @@ func (r *Retriver) Name() string {
 
 func (r *Retriver) Start() error {
 
+	defer r.closeRedisConn()
+
 	go func() {
 		<-r.shutdownChan
 		r.log("recieved shutdown chan")
 		r.shutdown()
-		if r.redisConn != nil {
-			err := r.redisConn.Close()
-			r.log(err)
-		}
+		r.log("close connection", r.closeRedisConn())
 	}()
 
 	for {
-		if r.isShutdown {
-			return nil
-		}
 		msg, err := r.retrive()
 		if err != nil {
-			r.log(err)
+			r.log("retrive err", err)
 			return err
 		}
 		if msg == nil {
@@ -55,17 +51,25 @@ func (r *Retriver) Start() error {
 }
 
 func (r *Retriver) setRedisConn() error {
-	r.log("set redis conn")
 	defer r.m.Unlock()
 	r.m.Lock()
 
-	conn := r.redisPool.Get()
-	if err := conn.Err(); err != nil {
-		conn.Close()
+	if r.redisConn == nil {
+		conn, err := redis.Dial(r.redisNetwork, r.redisAddr)
+		if err != nil {
+			return err
+		}
+
+		r.log("set redis conn")
+		r.redisConn = conn
+		return nil
+	}
+
+	if err := r.redisConn.Err(); err != nil {
+		r.redisConn = nil
 		return err
 	}
 
-	r.redisConn = conn
 	return nil
 }
 
@@ -74,13 +78,11 @@ func (r *Retriver) closeRedisConn() error {
 	defer r.m.Unlock()
 	r.m.Lock()
 
-	if r.redisConn != nil {
-		err := r.redisConn.Close()
-		r.redisConn = nil
-		return err
+	if r.redisConn == nil {
+		return nil
 	}
 
-	return nil
+	return r.redisConn.Close()
 }
 
 //TODO: when recieved shutdown, force close stop connection.
@@ -89,8 +91,6 @@ func (r *Retriver) retrive() (*apns.Msg, error) {
 	if err := r.setRedisConn(); err != nil {
 		return nil, err
 	}
-
-	defer r.closeRedisConn()
 
 	r.log("BRPOP", r.key, r.timeout)
 	reply, err := redis.Values(r.redisConn.Do("BRPOP", r.key, r.timeout))

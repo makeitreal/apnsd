@@ -1,7 +1,7 @@
 package apnsd
 
 import (
-	"reflect"
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -15,20 +15,6 @@ var (
 	Key = "foo"
 )
 
-func testRedisPool(socket string) *redis.Pool {
-	return &redis.Pool{
-		MaxIdle:     10,
-		IdleTimeout: time.Second * 30,
-		Dial: func() (redis.Conn, error) {
-			return redis.Dial("unix", socket)
-		},
-		TestOnBorrow: func(c redis.Conn, t time.Time) error {
-			_, err := c.Do("PING")
-			return err
-		},
-	}
-}
-
 func testRetriver() (*Retriver, *redistest.Server, error) {
 	redisserver, err := redistest.NewServer(true, redistest.Config{})
 
@@ -41,7 +27,8 @@ func testRetriver() (*Retriver, *redistest.Server, error) {
 
 	retriver := &Retriver{
 		c:            msgChan,
-		redisPool:    testRedisPool(redisserver.Config["unixsocket"]),
+		redisNetwork: "unix",
+		redisAddr:    redisserver.Config["unixsocket"],
 		shutdownChan: shutdownChan,
 		key:          Key,
 		timeout:      "3",
@@ -50,30 +37,8 @@ func testRetriver() (*Retriver, *redistest.Server, error) {
 	return retriver, redisserver, nil
 }
 
-func TestRetriverShutdown(t *testing.T) {
-
-	retriver, redisserver, err := testRetriver()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer redisserver.Stop()
-
-	var retriverErr error
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		time.Sleep(time.Second * 2)
-		retriverErr = retriver.Start()
-	}()
-
-	retriver.shutdownChan <- struct{}{}
-	wg.Wait()
-
-	if retriverErr != nil {
-		t.Error("if recieved shutdown chan, err should be nil", retriverErr)
-	}
+func testRetriverRedisConn(s *redistest.Server) (redis.Conn, error) {
+	return redis.Dial("unix", s.Config["unixsocket"])
 }
 
 func TestRetriverDeque(t *testing.T) {
@@ -92,8 +57,8 @@ func TestRetriverDeque(t *testing.T) {
 		retriverErr = retriver.Start()
 	}()
 
-	conn := retriver.redisPool.Get()
-	if err := conn.Err(); err != nil {
+	conn, err := testRetriverRedisConn(redisserver)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -106,10 +71,11 @@ func TestRetriverDeque(t *testing.T) {
 				Alert: &apns.Alert{
 					Body: apns.String("hi"),
 				},
-				Badge: apns.Int(1),
+				Badge: apns.Int(0),
 			},
 		},
 	}
+
 	byt, err := EncodeMsg(orgMsg)
 	if err != nil {
 		t.Fatal(err)
@@ -123,18 +89,33 @@ func TestRetriverDeque(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		newMsg := <-retriver.c
-		if !reflect.DeepEqual(orgMsg, newMsg) {
-			t.Log("orgMsg:", orgMsg)
-			t.Log("newMsg:", newMsg)
+		if string(orgMsg.Token) != string(newMsg.Token) {
+			t.Error("orgMsg.token:", string(orgMsg.Token), "newMsg.Token", string(newMsg.Token))
+		}
+
+		if orgMsg.Priority != newMsg.Priority {
+			t.Error("orgMsg.Priority", orgMsg.Priority, "newMsg.Priority", newMsg.Priority)
+		}
+
+		if orgMsg.Expire != newMsg.Expire {
+			t.Error("orgMsg.Expire", orgMsg.Expire, "newMsg.Expire", newMsg.Expire)
+		}
+
+		orgMsgJson, _ := json.Marshal(orgMsg.Payload)
+		newMsgJson, _ := json.Marshal(newMsg.Payload)
+
+		t.Log("orgMsg.Payload:", string(orgMsgJson))
+		t.Log("newMsg.Payload:", string(newMsgJson))
+		if string(orgMsgJson) != string(newMsgJson) {
 			t.Error("org msg and new msg is not same")
 		}
+		retriver.shutdownChan <- struct{}{}
 	}()
 
-	retriver.shutdownChan <- struct{}{}
 	wg.Wait()
 }
 
-func TestRetriverCancelByShutdown(t *testing.T) {
+func TestRetriverShutdown(t *testing.T) {
 	retriver, redisserver, err := testRetriver()
 	if err != nil {
 		t.Fatal(err)
@@ -149,11 +130,6 @@ func TestRetriverCancelByShutdown(t *testing.T) {
 		defer wg.Done()
 		retriverErr = retriver.Start()
 	}()
-
-	conn := retriver.redisPool.Get()
-	if err := conn.Err(); err != nil {
-		t.Fatal(err)
-	}
 
 	retriver.timeout = "5" // long timeout
 

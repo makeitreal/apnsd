@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/garyburd/redigo/redis"
 	"github.com/makeitreal/apnsd/apns"
 )
 
@@ -61,13 +60,11 @@ func (c *Client) Start() int {
 		})
 	}
 
-	redisPool := c.redisPool()
-	defer redisPool.Close()
-
 	for i := 0; i < c.RetriverNum; i++ {
 		starters = append(starters, &Retriver{
 			c:            msgChan,
-			redisPool:    redisPool,
+			redisNetwork: c.RedisNetwork,
+			redisAddr:    c.RedisAddr,
 			shutdownChan: shutdownChan,
 			key:          c.RetriverKey,
 			timeout:      c.RetriverTimeout,
@@ -105,20 +102,6 @@ func (c *Client) Start() int {
 	c.log("all starter are died")
 
 	return 1
-}
-
-func (c *Client) redisPool() *redis.Pool {
-	return &redis.Pool{
-		MaxIdle:     c.RedisMaxIdle,
-		IdleTimeout: c.RedisIdleTimeout,
-		Dial: func() (redis.Conn, error) {
-			return redis.Dial(c.RedisNetwork, c.RedisAddr)
-		},
-		TestOnBorrow: func(c redis.Conn, t time.Time) error {
-			_, err := c.Do("PING")
-			return err
-		},
-	}
 }
 
 func (s *Client) log(v ...interface{}) {
