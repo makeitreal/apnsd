@@ -61,7 +61,6 @@ func (c *Client) Start() int {
 		})
 	}
 
-	//TODO: redis setup
 	redisPool := c.redisPool()
 	defer redisPool.Close()
 
