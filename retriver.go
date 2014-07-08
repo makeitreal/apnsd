@@ -10,9 +10,9 @@ import (
 )
 
 type Retriver struct {
-	c            chan<- *apns.Msg
+	c            chan *apns.Msg
 	redisPool    *redis.Pool
-	shutdownChan <-chan struct{}
+	shutdownChan chan struct{}
 	isShutdown   bool
 	key          string
 	timeout      string
@@ -31,7 +31,8 @@ func (r *Retriver) Start() error {
 		r.log("recieved shutdown chan")
 		r.shutdown()
 		if r.redisConn != nil {
-			r.redisConn.Close()
+			err := r.redisConn.Close()
+			r.log(err)
 		}
 	}()
 
@@ -47,6 +48,7 @@ func (r *Retriver) Start() error {
 		if msg == nil {
 			continue
 		}
+		r.log("decoded msg and send to channel", msg)
 		r.c <- msg
 	}
 }
@@ -80,6 +82,8 @@ func (r *Retriver) closeRedisConn() error {
 	return nil
 }
 
+//TODO: when recieved shutdown, force close stop connection.
+// current implementation, wait to finish blocking command  when call close to pooled connection.
 func (r *Retriver) retrive() (*apns.Msg, error) {
 	if err := r.setRedisConn(); err != nil {
 		return nil, err
@@ -87,7 +91,7 @@ func (r *Retriver) retrive() (*apns.Msg, error) {
 
 	defer r.closeRedisConn()
 
-	r.log("brpop", r.key, r.timeout)
+	r.log("BRPOP", r.key, r.timeout)
 	reply, err := redis.Values(r.redisConn.Do("BRPOP", r.key, r.timeout))
 	if err == redis.ErrNil {
 		return nil, nil
@@ -103,7 +107,6 @@ func (r *Retriver) retrive() (*apns.Msg, error) {
 		return nil, err
 	}
 
-	r.log("decode!")
 	return DecodeMsg(byt)
 }
 
