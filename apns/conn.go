@@ -13,30 +13,30 @@ const (
 )
 
 type Connection struct {
-	conn net.Conn
+	net.Conn
 }
 
 func NewConnection(conn net.Conn) *Connection {
 	c := &Connection{
-		conn: conn,
+		conn,
 	}
 	return c
 }
 
-func (c *Connection) Write(msg *Msg) error {
+func (c *Connection) WriteMsg(msg *Msg) error {
 	var b bytes.Buffer
 	if err := msg.write(&b); err != nil {
 		return err
 	}
-	if _, err := c.conn.Write(b.Bytes()); err != nil {
+	if _, err := c.Write(b.Bytes()); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *Connection) ReadError() (*ErrorMsg, error) {
+func (c *Connection) ReadErrorMsg() (*ErrorMsg, error) {
 	b := make([]byte, 6)
-	_, err := c.conn.Read(b)
+	_, err := c.Read(b)
 	if err != nil && err != io.EOF {
 		return nil, err
 	}

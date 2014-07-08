@@ -4,10 +4,11 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"flag"
-	"github.com/makeitreal/apnsd/apns"
 	"log"
 	"net"
 	"sync"
+
+	"github.com/makeitreal/apnsd/apns"
 )
 
 var (
@@ -39,7 +40,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		errMsg, err := connection.ReadError()
+		errMsg, err := connection.ReadErrorMsg()
 		if err != nil {
 			log.Fatal("read error: ", err)
 		}
@@ -64,7 +65,7 @@ func main() {
 		},
 		Identifier: 1,
 	}
-	if err := connection.Write(msg); err != nil {
+	if err := connection.WriteMsg(msg); err != nil {
 		log.Fatal("send error", err)
 	}
 	wg.Wait()
