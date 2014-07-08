@@ -9,6 +9,7 @@ import (
 	"github.com/makeitreal/apnsd/apns"
 )
 
+//TODO: retriver has one connection to redis. not use pool
 type Retriver struct {
 	c            chan *apns.Msg
 	redisPool    *redis.Pool
