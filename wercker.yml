@@ -1,4 +1,5 @@
 box: wercker/golang
+
 build:
   steps:
     - setup-go-workspace
@@ -19,3 +20,9 @@ build:
         name: go test -v
         code: |
           go test -v github.com/makeitreal/apnsd/...
+
+  after-steps:
+    - sherzberg/slack-notify:
+        subdomain: makeitreal
+        token: $SLACK_TOKEN
+        channel: general
