@@ -24,6 +24,7 @@ func (r *Retriver) Name() string {
 	return "retriver"
 }
 
+//TODO: redis reconnect with sleep when EOF recieved
 func (r *Retriver) Start() error {
 
 	defer r.closeRedisConn()
