@@ -3,6 +3,7 @@ package apnsd
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"encoding/binary"
@@ -156,10 +157,11 @@ func testApnsDecodeBinary(frame []byte) (*apns.Msg, error) {
 }
 
 func testNewApnsMsg() *apns.Msg {
-	hexToken, _ := hex.DecodeString("1234567890123456789123456789123456789123456789123456789123456789")
+	b := make([]byte, apns.DeviceTokenLength)
+	rand.Read(b)
 
 	return &apns.Msg{
-		Token:    hexToken,
+		Token:    b,
 		Priority: 13,
 		Expire:   0,
 		Payload: apns.Payload{
