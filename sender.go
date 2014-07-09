@@ -20,6 +20,7 @@ type Sender struct {
 	identifier     *Identifier
 	errorTimeout   time.Duration
 	reconnectSleep time.Duration
+	connectCount   int
 	shutdownChan   <-chan struct{}
 	isShutdown     bool
 	m              sync.Mutex
@@ -41,31 +42,18 @@ func (s *Sender) Start() error {
 }
 
 func (s *Sender) work() error {
-	//TODO: lazy connect
-	tlsConn, err := tls.Dial("tcp", s.apnsAddr, s.tlsConfig)
+
+	context, err := s.newSenderContext(2) // non blocking notify
 
 	if err != nil {
 		return err
 	}
 
-	s.log("success to connect ", s.apnsAddr)
-	conn := apns.NewConnection(tlsConn)
-	defer conn.Close()
+	defer context.conn.Close()
 
-	errorChan := make(chan error, 2) // non blocking notify
-	errorMsgChan := make(chan *apns.ErrorMsg, 1)
-	closeChan := make(chan struct{}, 0)
 	var wg sync.WaitGroup
 
-	// receive only networking error
-	go func() {
-		errMsg, err := conn.ReadErrorMsg()
-		s.log("read error errMsg:", errMsg, "err:", err)
-		errorChan <- err
-		if errMsg != nil {
-			errorMsgChan <- errMsg
-		}
-	}()
+	go context.readConnectionError()
 
 	wg.Add(1)
 	go func() {
@@ -77,34 +65,25 @@ func (s *Sender) work() error {
 				identifier := s.identifier.NextIdentifier()
 				msg.Identifier = identifier
 
-				if err := conn.WriteMsg(msg); err != nil {
+				if err := context.conn.WriteMsg(msg); err != nil {
 					s.log("connection write error:", err)
-					errorChan <- err
+					context.errorChan <- err
 					return
 				}
-			case <-closeChan:
+			case <-context.closeChan:
 				s.log("close chan received")
 				return
 			case <-s.shutdownChan:
 				s.log("shutdown event received")
 				s.shutdown()
-				errorChan <- nil
+				context.conn.Close()
+				context.errorChan <- nil
 				return
 			}
 		}
 	}()
 
-	<-errorChan      // receive err but i dont know what is networking error
-	close(closeChan) // notify goroutine for exiting
-
-	// read errMsg with timeout.
-	// when happen non networking error, errMsg does not come and timeout.
-	select {
-	case <-time.After(s.errorTimeout):
-		s.log("timeout error msg chan!")
-	case errMsg := <-errorMsgChan:
-		s.log("err msg chan:", errMsg)
-	}
+	context.wait(s.errorTimeout)
 
 	wg.Wait()
 
@@ -115,12 +94,87 @@ func (s *Sender) work() error {
 	}
 }
 
+func (s *Sender) newConnection() (*apns.Connection, error) {
+	//TODO: lazy connect
+	tlsConn, err := tls.Dial("tcp", s.apnsAddr, s.tlsConfig)
+
+	if err != nil {
+		return nil, err
+	}
+
+	s.log("success to connect ", s.apnsAddr)
+	s.incrConnectCount()
+
+	return apns.NewConnection(tlsConn), nil
+}
+
 func (s *Sender) shutdown() {
 	defer s.m.Unlock()
 	s.m.Lock()
 	s.isShutdown = true
 }
 
+func (s *Sender) incrConnectCount() {
+	defer s.m.Unlock()
+	s.m.Lock()
+	s.connectCount++
+}
+
 func (s *Sender) log(v ...interface{}) {
 	log.Println("[sender]", fmt.Sprint(v))
+}
+
+func (s *Sender) newSenderContext(errorChanSize int) (*senderContext, error) {
+
+	conn, err := s.newConnection()
+	if err != nil {
+		return nil, err
+	}
+
+	errorChan := make(chan error, errorChanSize) // non blocking notify
+	errorMsgChan := make(chan *apns.ErrorMsg, 1)
+	closeChan := make(chan struct{}, 0)
+
+	return &senderContext{
+		conn:         conn,
+		errorChan:    errorChan,
+		errorMsgChan: errorMsgChan,
+		closeChan:    closeChan,
+	}, nil
+}
+
+type senderContext struct {
+	conn         *apns.Connection
+	errorChan    chan error
+	errorMsgChan chan *apns.ErrorMsg
+	closeChan    chan struct{}
+}
+
+// receive only networking error
+func (s *senderContext) readConnectionError() {
+	errMsg, err := s.conn.ReadErrorMsg()
+	s.log("read error errMsg:", errMsg, "err:", err)
+	s.errorChan <- err
+	if errMsg != nil {
+		s.errorMsgChan <- errMsg
+	}
+}
+
+func (s *senderContext) wait(timeout time.Duration) {
+	<-s.errorChan      // receive err but i dont know what is networking error
+	close(s.closeChan) // notify goroutine for exiting
+
+	// read errMsg with timeout.
+	// when happen non networking error, errMsg does not come and timeout.
+	select {
+	case <-time.After(timeout):
+		s.log("timeout error msg chan!")
+	case errMsg := <-s.errorMsgChan:
+		//TODO: more detail error
+		s.log("err msg chan:", errMsg)
+	}
+}
+
+func (s *senderContext) log(v ...interface{}) {
+	log.Println("[sender context]", fmt.Sprint(v))
 }

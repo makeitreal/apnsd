@@ -18,19 +18,24 @@ import (
 )
 
 type testMockApnsServer struct {
-	l         net.Listener
-	tlsConfig *tls.Config
-	msgChan   chan *apns.Msg
+	l            net.Listener
+	tlsConfig    *tls.Config
+	msgChan      chan *apns.Msg
+	shutdownChan chan struct{}
 }
 
-func newTestMockApnsServer() (*testMockApnsServer, error) {
+func newTestMockApnsServer(addr string) (*testMockApnsServer, error) {
 	config := &tls.Config{
 		Certificates: make([]tls.Certificate, 1),
 	}
 	config.Certificates[0].Certificate = [][]byte{testRSACertificate}
 	config.Certificates[0].PrivateKey = testRSAPrivateKey
 
-	l, err := tls.Listen("tcp", net.JoinHostPort("127.0.0.1", "0"), config)
+	if addr == "" {
+		addr = net.JoinHostPort("127.0.0.1", "0")
+	}
+
+	l, err := tls.Listen("tcp", addr, config)
 
 	if err != nil {
 		return nil, err
@@ -40,6 +45,7 @@ func newTestMockApnsServer() (*testMockApnsServer, error) {
 	m.tlsConfig = config
 	m.l = l
 	m.msgChan = make(chan *apns.Msg, 10)
+	m.shutdownChan = make(chan struct{}, 0)
 
 	return m, nil
 }
@@ -54,6 +60,16 @@ func (m *testMockApnsServer) handle() error {
 			return err
 		}
 
+		errorChan := make(chan error, 1)
+
+		go func() {
+			select {
+			case <-m.shutdownChan:
+			case <-errorChan:
+			}
+			conn.Close()
+		}()
+
 		go func(conn net.Conn) {
 			for {
 				r := bufio.NewReader(conn)
@@ -62,10 +78,12 @@ func (m *testMockApnsServer) handle() error {
 
 				if err := binary.Read(r, binary.BigEndian, &command); err != nil {
 					log.Println(err)
+					errorChan <- err
 					return
 				}
 				if err := binary.Read(r, binary.BigEndian, &frameLength); err != nil {
 					log.Println(err)
+					errorChan <- err
 					return
 				}
 
@@ -73,12 +91,14 @@ func (m *testMockApnsServer) handle() error {
 
 				if err := binary.Read(r, binary.BigEndian, &frame); err != nil {
 					log.Println(err)
+					errorChan <- err
 					return
 				}
 
 				msg, err := testApnsDecodeBinary(frame)
 				if err != nil {
 					log.Println(err)
+					errorChan <- err
 					return
 				}
 
@@ -179,7 +199,7 @@ func testNewApnsMsg() *apns.Msg {
 
 func TestMockServer(t *testing.T) {
 
-	mock, err := newTestMockApnsServer()
+	mock, err := newTestMockApnsServer("")
 	if err != nil {
 		t.Fatal(err)
 	}
