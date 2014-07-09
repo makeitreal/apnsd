@@ -1,0 +1,28 @@
+{
+  "Certificate": {
+    "Key": "/path/to/key",
+    "Cer": "/path/to/cer"
+  },
+  "Client": {
+    "Buffer": 30
+  },
+  "Sender": {
+    "Num": 2,
+    "ErrorTimeout": 3,
+    "ReconnectSleep": 3
+  },
+  "Apns": {
+    "Host": "gateway.sandbox.push.apple.com",
+    "Port": "2195"
+  },
+  "Retriver": {
+    "Num": 2
+  },
+  "Redis": {
+    "Key": "APNSD_QUEUE",
+    "Timeout": "10",
+    "Network": "tcp",
+    "Host": "127.0.0.1",
+    "Port": "6379"
+  }
+}
