@@ -24,7 +24,10 @@ func main() {
 		log.Fatal("[apnsd]", "config load error:", err, *configFileName)
 	}
 
-	log.Println(config)
+	if err := config.Validate(); err != nil {
+		log.Fatal("[apnsd]", err)
+	}
+
 	cer, err := tls.LoadX509KeyPair(
 		config.Certificate.Cer,
 		config.Certificate.Key,
@@ -58,10 +61,8 @@ func main() {
 		RetriverKey:     config.Redis.Key,
 		RetriverTimeout: config.Redis.Timeout,
 
-		RedisMaxIdle:     config.Redis.MaxIdle,
-		RedisIdleTimeout: time.Second * time.Duration(config.Redis.IdleTimeout),
-		RedisNetwork:     config.Redis.Network,
-		RedisAddr:        net.JoinHostPort(config.Redis.Host, config.Redis.Port),
+		RedisNetwork: config.Redis.Network,
+		RedisAddr:    net.JoinHostPort(config.Redis.Host, config.Redis.Port),
 	}
 
 	log.Fatal("[apnsd]", c.Start())
