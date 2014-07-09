@@ -3,19 +3,19 @@ build:
   steps:
     - setup-go-workspace
     - script:
-      name: go get -t
-      code: |
-        cd $WERCKER_SOURCE_DIR
-        go version
-        go get -t
+        name: go get -t
+        code: |
+          cd $WERCKER_SOURCE_DIR
+          go version
+          go get -t
 
     - script:
-      name: install redis
-      code: |
-        sudo apt-get update
-        sudo apt-get install redis-server
+        name: install redis
+        code: |
+          sudo apt-get update
+          sudo apt-get install redis-server
 
     - script:
-      name: go test -v
-      code: |
-        go test -v
+        name: go test -v
+        code: |
+          go test -v github.com/makeitreal/apnsd/...
