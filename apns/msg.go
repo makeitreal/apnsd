@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 )
 
@@ -40,7 +39,6 @@ func (m *Msg) write(w io.Writer) error {
 		return err
 	}
 
-	fmt.Println(string(payload))
 	//TODO: auto trim
 	if len(payload) > MaxPayloadLength {
 		return errors.New("payload length is over")
