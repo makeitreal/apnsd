@@ -155,6 +155,26 @@ func testApnsDecodeBinary(frame []byte) (*apns.Msg, error) {
 	}, nil
 }
 
+func testNewApnsMsg() *apns.Msg {
+	hexToken, _ := hex.DecodeString("1234567890123456789123456789123456789123456789123456789123456789")
+
+	return &apns.Msg{
+		Token:    hexToken,
+		Priority: 13,
+		Expire:   0,
+		Payload: apns.Payload{
+			"aps": &apns.Aps{
+				Alert: &apns.Alert{
+					Body: apns.String("hi"),
+				},
+				Badge: apns.Int(0),
+			},
+			"dame": "leon",
+		},
+	}
+
+}
+
 func TestMockServer(t *testing.T) {
 
 	mock, err := newTestMockApnsServer()
@@ -174,25 +194,7 @@ func TestMockServer(t *testing.T) {
 	}
 	conn := apns.NewConnection(tlsConn)
 
-	hexToken, err := hex.DecodeString("1234567890123456789123456789123456789123456789123456789123456789")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	orgMsg := &apns.Msg{
-		Token:    hexToken,
-		Priority: 13,
-		Expire:   0,
-		Payload: apns.Payload{
-			"aps": &apns.Aps{
-				Alert: &apns.Alert{
-					Body: apns.String("hi"),
-				},
-				Badge: apns.Int(0),
-			},
-			"dame": "leon",
-		},
-	}
+	orgMsg := testNewApnsMsg()
 
 	if err := conn.WriteMsg(orgMsg); err != nil {
 		t.Fatal(err)
