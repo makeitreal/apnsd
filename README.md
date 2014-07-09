@@ -5,7 +5,7 @@ apns + redis = apnsd
 ## usage
 
 ```
-go get github.com/makeitreal/apnsd/apnsd
+go get github.com/makeitreal/apnsd/cmd/apnsd
 apnsd --config /path/to/config.json
 ```
 
