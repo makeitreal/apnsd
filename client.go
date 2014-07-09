@@ -32,10 +32,8 @@ type Client struct {
 	RetriverTimeout string
 
 	// redis
-	RedisMaxIdle     int
-	RedisIdleTimeout time.Duration
-	RedisNetwork     string
-	RedisAddr        string
+	RedisNetwork string
+	RedisAddr    string
 }
 
 func (c *Client) Start() int {
