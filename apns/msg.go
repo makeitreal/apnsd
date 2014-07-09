@@ -66,7 +66,7 @@ func (m *Msg) write(w io.Writer) error {
 	// expiration date
 	binary.Write(&b, binary.BigEndian, uint8(ExpirationDateItemId))
 	binary.Write(&b, binary.BigEndian, uint16(ExpirationDateLength))
-	binary.Write(&b, binary.BigEndian, m.Expire) //TODO: should uint32 ?
+	binary.Write(&b, binary.BigEndian, m.Expire)
 
 	// priority
 	binary.Write(&b, binary.BigEndian, uint8(PriorityItemId))
