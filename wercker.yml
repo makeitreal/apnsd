@@ -17,5 +17,5 @@ build:
 
     - script:
       name: go test -v
-        code: |
-          go test -v
+      code: |
+        go test -v
