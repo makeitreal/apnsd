@@ -24,14 +24,17 @@ type Config struct {
 		Port string
 	}
 	Retriver struct {
-		Num int
+		Num             int
+		ShutdownTimeout int
 	}
 	Redis struct {
-		Key     string
-		Timeout string
-		Network string
-		Host    string
-		Port    string
+		Key            string
+		BrpopTimeout   string
+		ReconnectSleep int
+		DialTimeout    int
+		Network        string
+		Host           string
+		Port           string
 	}
 }
 
@@ -78,12 +81,24 @@ func (c *Config) Validate() error {
 		return errors.New("Retriver.Num should more than 0")
 	}
 
+	if c.Retriver.ShutdownTimeout < 1 {
+		return errors.New("Retriver.ShutdownTimeout should more than 0")
+	}
+
 	if c.Redis.Key == "" {
 		return errors.New("Redis.Key should not empty")
 	}
 
-	if c.Redis.Timeout == "" {
-		return errors.New("Redis.Timeout should not empty")
+	if c.Redis.BrpopTimeout == "" {
+		return errors.New("Redis.BrpopTimeout should not empty")
+	}
+
+	if c.Redis.DialTimeout < 1 {
+		return errors.New("Redis.DialTimeout should more than 0")
+	}
+
+	if c.Redis.ReconnectSleep < 1 {
+		return errors.New("Redis.ReconnectSleep should more than 0")
 	}
 
 	if c.Redis.Network == "" {

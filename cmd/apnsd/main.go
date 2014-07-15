@@ -57,9 +57,12 @@ func main() {
 		SenderErrorTimeout:   time.Second * time.Duration(config.Sender.ErrorTimeout),
 		SenderReconnectSleep: time.Second * time.Duration(config.Sender.ReconnectSleep),
 
-		RetriverNum:     config.Retriver.Num,
-		RetriverKey:     config.Redis.Key,
-		RetriverTimeout: config.Redis.Timeout,
+		RetriverNum:                 config.Retriver.Num,
+		RetriverKey:                 config.Redis.Key,
+		RetriverShutdownTimeout:     time.Second * time.Duration(config.Retriver.ShutdownTimeout),
+		RetriverRedisBrpopTimeout:   config.Redis.BrpopTimeout,
+		RetriverRedisDialTimeout:    time.Second * time.Duration(config.Redis.DialTimeout),
+		RetriverRedisReconnectSleep: time.Second * time.Duration(config.Redis.ReconnectSleep),
 
 		RedisNetwork: config.Redis.Network,
 		RedisAddr:    net.JoinHostPort(config.Redis.Host, config.Redis.Port),

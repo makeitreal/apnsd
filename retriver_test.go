@@ -26,12 +26,15 @@ func testRetriver() (*Retriver, *redistest.Server, error) {
 	shutdownChan := make(chan struct{}, 0)
 
 	retriver := &Retriver{
-		c:            msgChan,
-		redisNetwork: "unix",
-		redisAddr:    redisserver.Config["unixsocket"],
-		shutdownChan: shutdownChan,
-		key:          Key,
-		timeout:      "3",
+		c:                   msgChan,
+		redisNetwork:        "unix",
+		redisAddr:           redisserver.Config["unixsocket"],
+		shutdownChan:        shutdownChan,
+		shutdownTimeout:     time.Second,
+		key:                 Key,
+		redisBrpopTimeout:   "3",
+		redisReconnectSleep: time.Second,
+		redisDialTimeout:    time.Second,
 	}
 
 	return retriver, redisserver, nil
@@ -131,7 +134,7 @@ func TestRetriverShutdown(t *testing.T) {
 		retriverErr = retriver.Start()
 	}()
 
-	retriver.timeout = "5" // long timeout
+	retriver.redisBrpopTimeout = "10" // long timeout
 
 	before := time.Now()
 
@@ -145,4 +148,57 @@ func TestRetriverShutdown(t *testing.T) {
 	if after.Sub(before).Seconds() >= 3 {
 		t.Error("long timeout")
 	}
+}
+
+func TestRetriverReconnect(t *testing.T) {
+	retriver, redisserver, err := testRetriver()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer redisserver.Stop()
+
+	var retriverErr error
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		retriverErr = retriver.Start()
+	}()
+
+	time.Sleep(time.Second)
+
+	if retriver.connectCount != 1 {
+		t.Fatal("connect count should be 1. but got", retriver.connectCount)
+	}
+
+	redisserver.Stop()
+
+	time.Sleep(time.Second * 2)
+
+	redisserver, err = redistest.NewServer(true, nil)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer redisserver.Stop()
+
+	// rewrite redis config
+	retriver.redisNetwork = "unix"
+	retriver.redisAddr = redisserver.Config["unixsocket"]
+
+	time.Sleep(time.Second)
+
+	if retriver.connectCount != 2 {
+		t.Fatal("connect count should be 2. but got", retriver.connectCount)
+	}
+
+	retriver.shutdownChan <- struct{}{}
+
+	wg.Wait()
+}
+
+//TODO: TestRetriverBeforeConnectShutdown
+func TestRetriverBeforeConnectShutdown(t *testing.T) {
+	t.Skip("no test")
 }
