@@ -14,18 +14,20 @@ const (
 
 type Connection struct {
 	net.Conn
+	autotrim bool
 }
 
-func NewConnection(conn net.Conn) *Connection {
+func NewConnection(conn net.Conn, autotrim bool) *Connection {
 	c := &Connection{
 		conn,
+		autotrim,
 	}
 	return c
 }
 
 func (c *Connection) WriteMsg(msg *Msg) error {
 	var b bytes.Buffer
-	if err := msg.write(&b); err != nil {
+	if err := msg.write(&b, c.autotrim); err != nil {
 		return err
 	}
 	if _, err := c.Write(b.Bytes()); err != nil {

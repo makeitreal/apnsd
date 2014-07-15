@@ -105,7 +105,7 @@ func (s *Sender) newConnection() (*apns.Connection, error) {
 	s.log("success to connect ", s.apnsAddr)
 	s.incrConnectCount()
 
-	return apns.NewConnection(tlsConn), nil
+	return apns.NewConnection(tlsConn, true), nil
 }
 
 func (s *Sender) shutdown() {

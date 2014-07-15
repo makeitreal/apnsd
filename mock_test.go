@@ -214,7 +214,7 @@ func TestMockServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn := apns.NewConnection(tlsConn)
+	conn := apns.NewConnection(tlsConn, true)
 
 	orgMsg := testNewApnsMsg()
 

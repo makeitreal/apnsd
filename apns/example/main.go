@@ -33,7 +33,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	connection := apns.NewConnection(conn)
+	connection := apns.NewConnection(conn, true)
 
 	var wg sync.WaitGroup
 
