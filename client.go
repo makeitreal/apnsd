@@ -27,9 +27,13 @@ type Client struct {
 	SenderReconnectSleep time.Duration
 
 	// retriver
-	RetriverNum     int
-	RetriverKey     string
-	RetriverTimeout string
+	RetriverNum                 int
+	RetriverKey                 string
+	RetriverShutdownTimeout     time.Duration
+	RetriverRedisBrpopTimeout   string
+	RetriverRedisReconnectSleep time.Duration
+	RetriverRedisDialTimeout    time.Duration
+	Retriver
 
 	// redis
 	RedisNetwork string
@@ -60,12 +64,15 @@ func (c *Client) Start() int {
 
 	for i := 0; i < c.RetriverNum; i++ {
 		starters = append(starters, &Retriver{
-			c:            msgChan,
-			redisNetwork: c.RedisNetwork,
-			redisAddr:    c.RedisAddr,
-			shutdownChan: shutdownChan,
-			key:          c.RetriverKey,
-			timeout:      c.RetriverTimeout,
+			c:                   msgChan,
+			redisNetwork:        c.RedisNetwork,
+			redisAddr:           c.RedisAddr,
+			shutdownChan:        shutdownChan,
+			shutdownTimeout:     c.RetriverShutdownTimeout,
+			key:                 c.RetriverKey,
+			redisBrpopTimeout:   c.RetriverRedisBrpopTimeout,
+			redisDialTimeout:    c.RetriverRedisDialTimeout,
+			redisReconnectSleep: c.RetriverRedisReconnectSleep,
 		})
 	}
 

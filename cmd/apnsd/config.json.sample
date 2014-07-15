@@ -16,11 +16,14 @@
     "Port": "2195"
   },
   "Retriver": {
-    "Num": 2
+    "Num": 2,
+    "ShutdownTimeout": 3
   },
   "Redis": {
     "Key": "APNSD_QUEUE",
-    "Timeout": "10",
+    "BrpopTimeout": "10",
+    "ReconnectSleep": 1,
+    "DialTimeout": 1,
     "Network": "tcp",
     "Host": "127.0.0.1",
     "Port": "6379"
