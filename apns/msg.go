@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"unicode/utf8"
 )
 
 const (
@@ -24,6 +25,9 @@ const (
 
 type Payload map[string]interface{}
 
+var ErrTrim = errors.New("trim error")
+var ErrPayloadLengthOver = errors.New("payload length is over")
+
 type Msg struct {
 	Token      []byte
 	Payload    Payload
@@ -32,16 +36,48 @@ type Msg struct {
 	Identifier uint32
 }
 
-func (m *Msg) write(w io.Writer) error {
+func (m *Msg) write(w io.Writer, autotrim bool) error {
 
 	payload, err := json.Marshal(m.Payload)
 	if err != nil {
 		return err
 	}
 
-	//TODO: auto trim
+	if autotrim {
+		over := len(payload) - MaxPayloadLength
+		if over > 0 {
+			aps := m.Payload["aps"].(*Aps)
+			switch alert := aps.Alert.(type) {
+			case *string:
+				str, err := m.trim(*alert, over)
+				if err != nil {
+					return err
+				}
+				aps.Alert = &str
+			case string:
+				str, err := m.trim(alert, over)
+				if err != nil {
+					return err
+				}
+				aps.Alert = str
+			case *Alert:
+				str, err := m.trim(*alert.Body, over)
+				if err != nil {
+					return err
+				}
+				alert.Body = &str
+			default:
+				return errors.New(`m.Payload["aps"]["alert"] should be *string, string or *Alert`)
+			}
+		}
+		payload, err = json.Marshal(m.Payload)
+		if err != nil {
+			return err
+		}
+	}
+
 	if len(payload) > MaxPayloadLength {
-		return errors.New("payload length is over")
+		return ErrPayloadLengthOver
 	}
 
 	var b bytes.Buffer
@@ -77,6 +113,18 @@ func (m *Msg) write(w io.Writer) error {
 	binary.Write(w, binary.BigEndian, b.Bytes())       // frame
 
 	return nil
+}
+
+func (m *Msg) trim(str string, over int) (string, error) {
+	byt := []byte(str)
+
+	for i := len(byt) - 1 - over; i >= 0; i-- {
+		if subByt := byt[0:i]; utf8.Valid(subByt) {
+			return string(subByt), nil
+		}
+	}
+
+	return "", ErrTrim
 }
 
 type Aps struct {

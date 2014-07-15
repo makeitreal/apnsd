@@ -12,9 +12,11 @@ import (
 )
 
 var (
-	cerFile = flag.String("cer", "", "cer")
-	keyFile = flag.String("key", "", "key")
-	token   = flag.String("token", "", "token")
+	cerFile  = flag.String("cer", "", "cer")
+	keyFile  = flag.String("key", "", "key")
+	token    = flag.String("token", "", "token")
+	body     = flag.String("body", "hello!", "body")
+	autotrim = flag.Bool("autotrim", true, "autotrim")
 )
 
 func main() {
@@ -33,7 +35,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	connection := apns.NewConnection(conn)
+	connection := apns.NewConnection(conn, *autotrim)
 
 	var wg sync.WaitGroup
 
@@ -58,7 +60,7 @@ func main() {
 		Payload: apns.Payload{
 			"aps": &apns.Aps{
 				Alert: &apns.Alert{
-					Body: apns.String("hello!"),
+					Body: apns.String(*body),
 				},
 				Badge: apns.Int(1),
 			},
@@ -66,7 +68,7 @@ func main() {
 		Identifier: 1,
 	}
 	if err := connection.WriteMsg(msg); err != nil {
-		log.Fatal("send error", err)
+		log.Fatal("send error:", err)
 	}
 	wg.Wait()
 }
