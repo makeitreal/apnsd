@@ -161,7 +161,7 @@ func (r *Retriver) retriveLoop(conn redis.Conn, retriveErrChan chan error) {
 		}
 
 		//TODO: block ok ?
-		r.log("send to channel", msg)
+		r.log("send to channel", *msg)
 		r.c <- msg
 	}
 }

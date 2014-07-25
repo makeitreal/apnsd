@@ -61,7 +61,7 @@ func (s *Sender) work() error {
 		for {
 			select {
 			case msg := <-s.c:
-				s.log("receive msg", msg, "and try to send")
+				s.log("receive msg", *msg, "and try to send")
 				identifier := s.identifier.NextIdentifier()
 				msg.Identifier = identifier
 
