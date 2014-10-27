@@ -1,20 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
 	"flag"
 	"log"
 	"net"
 
 	"github.com/garyburd/redigo/redis"
-	"github.com/makeitreal/apnsd/apns"
+	"github.com/makeitreal/apnsd"
+	"github.com/ugorji/go/codec"
 )
 
 var (
 	token        = flag.String("token", "", "token")
 	body         = flag.String("body", "hello!", "body")
 	badge        = flag.Int("badge", 1, "badge")
-	redisKey     = flag.String("redisKey", "", "redisKey")
+	redisKey     = flag.String("redisKey", "APNSD:MSG_QUEUE", "redisKey")
 	redisNetwork = flag.String("redisNetwork", "tcp", "redisNetwork")
 	redisAddr    = flag.String("redisAddr", net.JoinHostPort("127.0.0.1", "6379"), "redisAddr")
 )
@@ -27,22 +29,20 @@ func main() {
 		log.Fatal(err)
 	}
 
-	msg := &apns.Msg{
-		Token:    hexToken,
-		Priority: 10,
-		Expire:   0,
-		Payload: apns.Payload{
-			"aps": &apns.Aps{
-				Alert: &apns.Alert{
-					Body: apns.String(*body),
-				},
-				Badge: apns.Int(*badge),
-			},
+	p := apnsd.NewPayload(&apnsd.Aps{
+		Alert: &apnsd.Alert{
+			Body: apnsd.String(*body),
 		},
+		Badge: apnsd.Int(*badge),
+	})
+
+	msg, err := apnsd.NewMsg(hexToken, p, 0, 10, 0)
+	if err != nil {
+		log.Println(err)
 	}
 
-	byt, err := apns.EncodeMsg(msg)
-	if err != nil {
+	var b bytes.Buffer
+	if err := codec.NewEncoder(&b, &codec.MsgpackHandle{}).Encode(msg); err != nil {
 		log.Fatal(err)
 	}
 
@@ -52,7 +52,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if _, err := conn.Do("LPUSH", *redisKey, byt); err != nil {
+	if _, err := conn.Do("LPUSH", *redisKey, b.Bytes()); err != nil {
 		log.Fatal(err)
 	}
 }

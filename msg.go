@@ -1,11 +1,12 @@
-package apns
+package apnsd
 
 import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -25,59 +26,40 @@ const (
 
 type Payload map[string]interface{}
 
-var ErrTrim = errors.New("trim error")
-var ErrPayloadLengthOver = errors.New("payload length is over")
-
-type Msg struct {
-	Token      []byte
-	Payload    Payload
-	Expire     uint32
-	Priority   uint8
-	Identifier uint32
+func NewPayload(aps *Aps) Payload {
+	p := Payload{}
+	p["aps"] = aps
+	return p
 }
 
-func (m *Msg) write(w io.Writer, autotrim bool) error {
+type Msg struct {
+	Token      []byte `codec:"token"`
+	Payload    string `codec:"payload"`
+	Expire     uint32 `codec:"expire, omitempty"`
+	Priority   uint8  `codec:"priority, omitempty"`
+	Identifier uint32 `codec:"identifier, omitempty"`
+}
 
-	payload, err := json.Marshal(m.Payload)
+func NewMsg(token []byte, payload Payload, expire uint32, priority uint8, identifier uint32) (*Msg, error) {
+	byt, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	m := Msg{}
+	m.Token = token
+	m.Payload = string(byt)
+	m.Expire = expire
+	m.Priority = priority
+	m.Identifier = identifier
+
+	return &m, nil
+}
+
+func (m *Msg) WriteWithAutotrim(w io.Writer) error {
+	trimedPayload, err := m.payloadBytWithAutotrim()
 	if err != nil {
 		return err
-	}
-
-	if autotrim {
-		over := len(payload) - MaxPayloadLength
-		if over > 0 {
-			aps := m.Payload["aps"].(*Aps)
-			switch alert := aps.Alert.(type) {
-			case *string:
-				str, err := m.trim(*alert, over)
-				if err != nil {
-					return err
-				}
-				aps.Alert = &str
-			case string:
-				str, err := m.trim(alert, over)
-				if err != nil {
-					return err
-				}
-				aps.Alert = str
-			case *Alert:
-				str, err := m.trim(*alert.Body, over)
-				if err != nil {
-					return err
-				}
-				alert.Body = &str
-			default:
-				return errors.New(`m.Payload["aps"]["alert"] should be *string, string or *Alert`)
-			}
-		}
-		payload, err = json.Marshal(m.Payload)
-		if err != nil {
-			return err
-		}
-	}
-
-	if len(payload) > MaxPayloadLength {
-		return ErrPayloadLengthOver
 	}
 
 	var b bytes.Buffer
@@ -89,8 +71,8 @@ func (m *Msg) write(w io.Writer, autotrim bool) error {
 
 	// payload
 	binary.Write(&b, binary.BigEndian, uint8(PayloadItemId))
-	binary.Write(&b, binary.BigEndian, uint16(len(payload)))
-	binary.Write(&b, binary.BigEndian, payload)
+	binary.Write(&b, binary.BigEndian, uint16(len(trimedPayload)))
+	binary.Write(&b, binary.BigEndian, trimedPayload)
 
 	// nofication identifier
 	binary.Write(&b, binary.BigEndian, uint8(NotificationIdentifierItemId))
@@ -115,6 +97,46 @@ func (m *Msg) write(w io.Writer, autotrim bool) error {
 	return nil
 }
 
+func (m *Msg) payloadBytWithAutotrim() ([]byte, error) {
+	over := len(m.Payload) - MaxPayloadLength
+
+	if over > 0 {
+		mp := map[string]interface{}{}
+		if err := json.NewDecoder(strings.NewReader(m.Payload)).Decode(&mp); err != nil {
+			return nil, err
+		}
+
+		switch mp["aps"].(map[string]interface{})["alert"].(type) {
+		case string:
+			trim, err := m.trim(mp["aps"].(map[string]interface{})["alert"].(string), over)
+			if err != nil {
+				return nil, err
+			}
+			mp["aps"].(map[string]interface{})["alert"] = trim
+		default:
+			switch mp["aps"].(map[string]interface{})["alert"].(map[string]interface{})["body"].(type) {
+			case string:
+				trim, err := m.trim(mp["aps"].(map[string]interface{})["alert"].(map[string]interface{})["body"].(string), over)
+				if err != nil {
+					return nil, err
+				}
+				mp["aps"].(map[string]interface{})["alert"].(map[string]interface{})["body"] = trim
+			default:
+				return nil, fmt.Errorf("aps.alert or aps.alert.body should be string")
+			}
+		}
+
+		byt, err := json.Marshal(mp)
+		if err != nil {
+			return nil, err
+		}
+
+		return byt, nil
+	}
+
+	return []byte(m.Payload), nil
+}
+
 func (m *Msg) trim(str string, over int) (string, error) {
 	byt := []byte(str)
 
@@ -124,7 +146,7 @@ func (m *Msg) trim(str string, over int) (string, error) {
 		}
 	}
 
-	return "", ErrTrim
+	return "", fmt.Errorf("trim error: ordinal str:%s", str)
 }
 
 type Aps struct {
@@ -132,15 +154,6 @@ type Aps struct {
 	Badge            *int        `json:"badge,omitempty"`
 	Sound            *string     `json:"sound,omitempty"`
 	ContentAvailable *string     `json:"content-available,omitempty"`
-}
-
-//TODO: more good idea
-func (a *Aps) GobDecode(byt []byte) error {
-	return json.Unmarshal(byt, a)
-}
-
-func (a *Aps) GobEncode() ([]byte, error) {
-	return json.Marshal(a)
 }
 
 type Alert struct {
@@ -151,24 +164,25 @@ type Alert struct {
 	LaunchImage  *string  `json:"launch-image,omitempty"`
 }
 
-func (a *Alert) GobDecode(byt []byte) error {
-	return json.Unmarshal(byt, a)
-}
-
-func (a *Alert) GobEncode() ([]byte, error) {
-	return json.Marshal(a)
-}
-
 type ErrorMsg struct {
 	Command    uint8
 	Status     uint8
 	Identifier uint32
 }
 
-func (e *ErrorMsg) Read(r io.Reader) {
-	binary.Read(r, binary.BigEndian, &e.Command)
-	binary.Read(r, binary.BigEndian, &e.Status)
-	binary.Read(r, binary.BigEndian, &e.Identifier)
+func (e *ErrorMsg) Read(r io.Reader) error {
+	b := make([]byte, 6)
+	_, err := r.Read(b)
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	br := bytes.NewReader(b)
+
+	binary.Read(br, binary.BigEndian, &e.Command)
+	binary.Read(br, binary.BigEndian, &e.Status)
+	binary.Read(br, binary.BigEndian, &e.Identifier)
+	return nil
 }
 
 func String(v string) *string {

@@ -22,7 +22,7 @@ build:
           go test -v github.com/makeitreal/apnsd/...
 
   after-steps:
-    - sherzberg/slack-notify:
-        subdomain: makeitreal
+    - wantedly/pretty-slack-notify:
+        team: makeitreal
         token: $SLACK_TOKEN
         channel: general

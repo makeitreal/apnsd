@@ -5,11 +5,9 @@ apns + redis = apnsd
 ## usage
 
 ```
-go get github.com/makeitreal/apnsd/cmd/apnsd
-apnsd --config /path/to/config.json
+go get github.com/makeitreal/apnsd/...
+apnsd -apnsCer="..." -apnsKey="..."
 ```
-
-sample config json is [here](https://github.com/makeitreal/apnsd/blob/master/apnsd/config.json.sample)
 
 ## todo
 
