@@ -61,7 +61,7 @@ func Test_Apnsd(t *testing.T) {
 			t.Fatal(err)
 		}
 		var b bytes.Buffer
-		if err := codec.NewEncoder(&b, &codec.MsgpackHandle{RawToString: true}).Encode(msg); err != nil {
+		if err := codec.NewEncoder(&b, &codec.MsgpackHandle{}).Encode(msg); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := r.Do("LPUSH", a.RetriveKey, b.Bytes()); err != nil {
@@ -105,7 +105,7 @@ func Test_Apnsd(t *testing.T) {
 			t.Fatal(err)
 		}
 		var b bytes.Buffer
-		if err := codec.NewEncoder(&b, &codec.MsgpackHandle{RawToString: true}).Encode(msg); err != nil {
+		if err := codec.NewEncoder(&b, &codec.MsgpackHandle{}).Encode(msg); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := r.Do("LPUSH", a.RetriveKey, b.Bytes()); err != nil {
@@ -141,7 +141,7 @@ func Test_Apnsd(t *testing.T) {
 			t.Fatal(err)
 		}
 		var b bytes.Buffer
-		if err := codec.NewEncoder(&b, &codec.MsgpackHandle{RawToString: true}).Encode(msg); err != nil {
+		if err := codec.NewEncoder(&b, &codec.MsgpackHandle{}).Encode(msg); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := r.Do("LPUSH", a.RetriveKey, b.Bytes()); err != nil {

@@ -43,9 +43,9 @@ func (r *Retriver) Start() error {
 	brpop := func(conn redis.Conn) {
 		defer conn.Close()
 
-		mh := &codec.MsgpackHandle{RawToString: true}
+		mh := &codec.MsgpackHandle{}
 		for {
-			reply, err := redis.Values(conn.Do("BRPOP", r.apnsd.RetriveKey, r.apnsd.RetriverDialTimeout.Seconds()-1))
+			reply, err := redis.Values(conn.Do("BRPOP", r.apnsd.RetriveKey, "30"))
 
 			if err != nil {
 				if err == redis.ErrNil {
