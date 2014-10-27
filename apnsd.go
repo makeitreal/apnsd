@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/garyburd/redigo/redis"
+	"github.com/hashicorp/golang-lru"
 	"github.com/ugorji/go/codec"
 )
 
@@ -80,6 +81,8 @@ func (r *Retriver) Start() error {
 				continue
 			}
 
+			r.apnsd.msgCache.Add(msg.Identifier, &msg)
+
 			r.msgChan <- b.Bytes()
 		}
 	}
@@ -140,26 +143,30 @@ func (s *Sender) Start() error {
 
 	msgClosedChan := make(chan struct{})
 
-	writeLoop := func(conn net.Conn, msgChan chan []byte) {
+	writeLoop := func(conn net.Conn, msgChan chan []byte, closeChan chan struct{}) {
 		defer conn.Close()
 		w := bufio.NewWriter(conn)
 
 		for {
-			msg, ok := <-msgChan
-			if !ok { // closed
-				msgClosedChan <- struct{}{}
-				return
-			}
+			select {
+			case msg, ok := <-msgChan:
+				if !ok { // closed
+					msgClosedChan <- struct{}{}
+					return
+				}
 
-			if _, err := w.Write(msg); err != nil {
-				log.Println("sender write err:", err)
-				reconnectTimer.Reset(time.Second)
-				return
-			}
+				if _, err := w.Write(msg); err != nil {
+					log.Println("sender write err:", err)
+					reconnectTimer.Reset(time.Second)
+					return
+				}
 
-			if err := w.Flush(); err != nil {
-				log.Println("sender write flush error:", err)
-				reconnectTimer.Reset(time.Second)
+				if err := w.Flush(); err != nil {
+					log.Println("sender write flush error:", err)
+					reconnectTimer.Reset(time.Second)
+					return
+				}
+			case <-closeChan:
 				return
 			}
 		}
@@ -172,10 +179,20 @@ func (s *Sender) Start() error {
 		if err := errMsg.Read(conn); err != nil {
 		}
 		log.Println("sender got err from apns server:", errMsg)
+
+		if errMsg.Identifier != 0 {
+			i, ok := s.apnsd.msgCache.Get(errMsg.Identifier)
+			if ok {
+				msg := i.(*Msg)
+				log.Printf("err msg: token:%s payload:%s expire:%d priority:%d identifier:%d", string(msg.Token), msg.Payload, msg.Expire, msg.Priority, msg.Identifier)
+			}
+		}
+
 		reconnectTimer.Reset(time.Second)
 	}
 
 	var conn net.Conn
+	var writeCloseChan chan struct{}
 
 	for {
 		select {
@@ -187,9 +204,13 @@ func (s *Sender) Start() error {
 				log.Println("sender dial err:", err)
 				reconnectTimer.Reset(time.Second)
 			} else {
+				if writeCloseChan != nil {
+					close(writeCloseChan)
+				}
+				writeCloseChan = make(chan struct{})
 				atomic.AddInt32(&s.apnsd.numOfConnectToApns, 1)
 				go read(conn)
-				go writeLoop(conn, s.msgChan)
+				go writeLoop(conn, s.msgChan, writeCloseChan)
 			}
 		case <-msgClosedChan:
 			log.Println("sender detect msg chan seems to be closed")
@@ -222,9 +243,15 @@ type Apnsd struct {
 	shutdownChan       chan struct{}
 	identifier         uint32
 	numOfConnectToApns int32
+	msgCache           *lru.Cache
 }
 
 func NewApnsd(apnsDialFunc func() (net.Conn, error)) *Apnsd {
+	msgCache, err := lru.New(1024 * 100)
+	if err != nil {
+		panic(err)
+	}
+
 	a := &Apnsd{
 		RetriverRedisNetwork: "tcp",
 		RetriverRedisAddr:    "127.0.0.1:6379",
@@ -239,6 +266,7 @@ func NewApnsd(apnsDialFunc func() (net.Conn, error)) *Apnsd {
 
 		shutdownChan: make(chan struct{}),
 		identifier:   0,
+		msgCache:     msgCache,
 	}
 
 	return a
