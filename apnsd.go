@@ -95,8 +95,8 @@ func (r *Retriver) Start() error {
 				r.apnsd.RetriverRedisNetwork,
 				r.apnsd.RetriverRedisAddr,
 				r.apnsd.RetriverDialTimeout,
-				r.apnsd.RetriverDialTimeout,
-				r.apnsd.RetriverDialTimeout,
+				0,
+				0,
 			)
 			if err != nil {
 				log.Println("redis dial err:", err)
