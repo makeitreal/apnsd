@@ -13,60 +13,68 @@ import (
 )
 
 var (
-	configFileName = flag.String("config", "config.json", "config fo apnsd")
+	prod = flag.Bool("prod", false, "connect to prod apns server")
+
+	redisKeyName = flag.String("redisKeyName", "", "key name of redis")
+	redisNetwork = flag.String("redisNetwork", "tcp", "network of redis")
+	redisAddr    = flag.String("redisAddr", "127.0.0.1:6379", "address of redis")
+
+	apnsCer = flag.String("apnsCer", "", "path to apns cer file")
+	apnsKey = flag.String("apnsKey", "", "path to apns key file")
+
+	numOfRetriver = flag.Int("numOfRetriver", 1, "num of retriver")
+	numOfSender   = flag.Int("numOfSender", 1, "num of sender")
 )
 
 func main() {
 	flag.Parse()
 
-	config, err := NewConfig(*configFileName)
+	cer, err := tls.LoadX509KeyPair(*apnsCer, *apnsKey)
 	if err != nil {
-		log.Fatal("[apnsd]", "config load error:", err, *configFileName)
+		log.Fatal("load certificate err:", err)
 	}
 
-	if err := config.Validate(); err != nil {
-		log.Fatal("[apnsd]", err)
+	a := apnsd.NewApnsd(func() (net.Conn, error) {
+		var addr string
+		if *prod {
+			addr = net.JoinHostPort(apnsd.ApnsProductionGateway, apnsd.ApnsPort)
+		} else {
+			addr = net.JoinHostPort(apnsd.ApnsSandboxGateway, apnsd.ApnsPort)
+		}
+		dialer := &net.Dialer{
+			Timeout: time.Second * 5,
+		}
+		return tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{Certificates: []tls.Certificate{cer}})
+	})
+
+	if *redisKeyName != "" {
+		a.RetriveKey = *redisKeyName
 	}
 
-	cer, err := tls.LoadX509KeyPair(
-		config.Certificate.Cer,
-		config.Certificate.Key,
-	)
-	if err != nil {
-		log.Fatal("[apnsd]", "load key error:", err)
+	if *redisNetwork != "" {
+		a.RetriverRedisNetwork = *redisNetwork
+	}
+
+	if *redisAddr != "" {
+		a.RetriverRedisAddr = *redisAddr
+	}
+
+	if *numOfRetriver != 0 {
+		a.RetriverNum = *numOfRetriver
+	}
+
+	if *numOfSender != 0 {
+		a.SenderNum = *numOfSender
 	}
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 
-	shutdownChan := make(chan struct{}, 1)
-
 	go func() {
-		<-signalChan
-		log.Println("[apnsd]", "signal recieved")
-		shutdownChan <- struct{}{}
+		sig := <-signalChan
+		log.Println("got signal:", sig)
+		a.Shutdown()
 	}()
 
-	c := &apnsd.Client{
-		MsgBufferNum: config.Client.Buffer,
-		ShutdownChan: shutdownChan,
-
-		Certificates:         []tls.Certificate{cer},
-		SenderNum:            config.Sender.Num,
-		ApnsAddr:             net.JoinHostPort(config.Apns.Host, config.Apns.Port),
-		SenderErrorTimeout:   time.Second * time.Duration(config.Sender.ErrorTimeout),
-		SenderReconnectSleep: time.Second * time.Duration(config.Sender.ReconnectSleep),
-
-		RetriverNum:                 config.Retriver.Num,
-		RetriverKey:                 config.Redis.Key,
-		RetriverShutdownTimeout:     time.Second * time.Duration(config.Retriver.ShutdownTimeout),
-		RetriverRedisBrpopTimeout:   config.Redis.BrpopTimeout,
-		RetriverRedisDialTimeout:    time.Second * time.Duration(config.Redis.DialTimeout),
-		RetriverRedisReconnectSleep: time.Second * time.Duration(config.Redis.ReconnectSleep),
-
-		RedisNetwork: config.Redis.Network,
-		RedisAddr:    net.JoinHostPort(config.Redis.Host, config.Redis.Port),
-	}
-
-	log.Fatal("[apnsd]", c.Start())
+	a.Start()
 }
