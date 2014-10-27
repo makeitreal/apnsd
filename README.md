@@ -11,7 +11,8 @@ apnsd -apnsCer="path/to/cerfile" -apnsKey="path/to/keyfile"
 
 ### enqueue
 
-send LPUSH command to redis-server with key that apnsd watch and message encoded as messagepack
+Send LPUSH command to redis-server with key that apnsd watch and message encoded as messagepack.
+Default redis key is ```APNSD:MSG_QUEUE```.
 
 ### encode spec
 
