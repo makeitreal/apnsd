@@ -3,6 +3,7 @@ package apnsd
 import (
 	"bufio"
 	"bytes"
+	"encoding/hex"
 	"log"
 	"net"
 	"sync"
@@ -184,7 +185,8 @@ func (s *Sender) Start() error {
 			i, ok := s.apnsd.msgCache.Get(errMsg.Identifier)
 			if ok {
 				msg := i.(*Msg)
-				log.Printf("err msg: token:%s payload:%s expire:%d priority:%d identifier:%d", string(msg.Token), msg.Payload, msg.Expire, msg.Priority, msg.Identifier)
+				token := hex.EncodeToString(msg.Token)
+				log.Printf("err msg: token:%s payload:%s expire:%d priority:%d identifier:%d", token, msg.Payload, msg.Expire, msg.Priority, msg.Identifier)
 			}
 		}
 
