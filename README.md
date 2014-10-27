@@ -5,8 +5,8 @@ apns + redis = apnsd
 ## usage
 
 ```
-go get github.com/makeitreal/apnsd/...
-apnsd -apnsCer="..." -apnsKey="..."
+go get github.com/makeitreal/apnsd/cmd/apnsd
+apnsd -apnsCer="path/to/cerfile" -apnsKey="path/to/keyfile"
 ```
 
 ### enqueue
