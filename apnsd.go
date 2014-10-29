@@ -258,6 +258,8 @@ func (s *SenderConn) readError() {
 			}
 		}
 		s.mx.Unlock()
+
+		//TODO: dial redis and lpush failed msg with status
 	}
 }
 
