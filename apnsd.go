@@ -3,7 +3,9 @@ package apnsd
 import (
 	"bufio"
 	"bytes"
+	"container/list"
 	"encoding/hex"
+	"errors"
 	"log"
 	"net"
 	"sync"
@@ -11,7 +13,6 @@ import (
 	"time"
 
 	"github.com/garyburd/redigo/redis"
-	"github.com/hashicorp/golang-lru"
 	"github.com/ugorji/go/codec"
 )
 
@@ -21,13 +22,15 @@ const (
 	ApnsSandboxGateway    = "gateway.sandbox.push.apple.com"
 )
 
+var ErrMsgClosed = errors.New("msg chan seems to be closed")
+
 type Retriver struct {
 	shutdown chan struct{}
-	msgChan  chan []byte
+	msgChan  chan *Msg
 	apnsd    *Apnsd
 }
 
-func NewRetriver(shutdown chan struct{}, msgChan chan []byte, apnsd *Apnsd) *Retriver {
+func NewRetriver(shutdown chan struct{}, msgChan chan *Msg, apnsd *Apnsd) *Retriver {
 	return &Retriver{
 		shutdown: shutdown,
 		msgChan:  msgChan,
@@ -53,7 +56,7 @@ func (r *Retriver) Start() error {
 				if err == redis.ErrNil {
 					continue
 				}
-				log.Printf("retriver redis err: %s. try to reconnect\n", err)
+				log.Printf("retriver redis err: %s\n", err)
 				reconnectTimer.Reset(time.Second)
 				return
 			}
@@ -71,20 +74,7 @@ func (r *Retriver) Start() error {
 				continue
 			}
 
-			if msg.Identifier == 0 {
-				// fill identifier
-				msg.Identifier = r.apnsd.NextIdentifier()
-			}
-
-			var b bytes.Buffer
-			if err := msg.WriteWithAutotrim(&b); err != nil {
-				log.Println("msg write with autotrim err:", err)
-				continue
-			}
-
-			r.apnsd.msgCache.Add(msg.Identifier, &msg)
-
-			r.msgChan <- b.Bytes()
+			r.msgChan <- &msg
 		}
 	}
 
@@ -123,12 +113,15 @@ func (r *Retriver) Start() error {
 
 type Sender struct {
 	shutdown chan struct{}
-	msgChan  chan []byte
+	msgChan  chan *Msg
 
 	apnsd *Apnsd
+	msgs  *list.List
+	mx    sync.Mutex
 }
 
-func NewSender(shutdown chan struct{}, msgChan chan []byte, apnsd *Apnsd) *Sender {
+func NewSender(shutdown chan struct{}, msgChan chan *Msg, apnsd *Apnsd) *Sender {
+
 	return &Sender{
 		shutdown: shutdown,
 		msgChan:  msgChan,
@@ -137,95 +130,178 @@ func NewSender(shutdown chan struct{}, msgChan chan []byte, apnsd *Apnsd) *Sende
 }
 
 func (s *Sender) Start() error {
+
 	connChan := make(chan struct{}, 1)
-	reconnectTimer := time.AfterFunc(-1, func() {
-		connChan <- struct{}{}
-	})
 
-	msgClosedChan := make(chan struct{})
+	connChan <- struct{}{}
 
-	writeLoop := func(conn net.Conn, msgChan chan []byte, closeChan chan struct{}) {
-		defer conn.Close()
-		w := bufio.NewWriter(conn)
-
-		for {
-			select {
-			case msg, ok := <-msgChan:
-				if !ok { // closed
-					msgClosedChan <- struct{}{}
-					return
-				}
-
-				if _, err := w.Write(msg); err != nil {
-					log.Println("sender write err:", err)
-					reconnectTimer.Reset(time.Second)
-					return
-				}
-
-				if err := w.Flush(); err != nil {
-					log.Println("sender write flush error:", err)
-					reconnectTimer.Reset(time.Second)
-					return
-				}
-			case <-closeChan:
-				return
-			}
-		}
-	}
-
-	read := func(conn net.Conn) {
-		defer conn.Close()
-
-		errMsg := &ErrorMsg{}
-		if err := errMsg.Read(conn); err != nil {
-		}
-		log.Println("sender got err from apns server:", errMsg)
-
-		if errMsg.Identifier != 0 {
-			i, ok := s.apnsd.msgCache.Get(errMsg.Identifier)
-			if ok {
-				msg := i.(*Msg)
-				token := hex.EncodeToString(msg.Token)
-				log.Printf("err msg: token:%s payload:%s expire:%d priority:%d identifier:%d", token, msg.Payload, msg.Expire, msg.Priority, msg.Identifier)
-			}
-		}
-
-		reconnectTimer.Reset(time.Second)
-	}
-
-	var conn net.Conn
-	var writeCloseChan chan struct{}
+	var senderConn *SenderConn
+	var connClosedChan <-chan struct{}
 
 	for {
 		select {
+		case <-connClosedChan:
+			switch senderConn.err {
+			case ErrMsgClosed:
+				log.Println("sender detect msg chan seems to be closed")
+				senderConn.Close() // block
+				return nil
+			case nil:
+				log.Println("previous sender conn seems to be closed. try to reconnect.")
+				connClosedChan = nil
+				senderConn.Close() // block
+				senderConn = nil
+				time.Sleep(time.Second * 1)
+				go func() { connChan <- struct{}{} }()
+			default:
+				panic("not expected err received:" + senderConn.err.Error())
+			}
 		case <-connChan:
+			if senderConn != nil {
+				panic("sender conn should be nil")
+			}
+
 			log.Println("sender connecting to apns server")
-			var err error
-			conn, err = s.apnsd.SenderDialFunc()
+			conn, err := s.apnsd.SenderDialFunc()
 			if err != nil {
 				log.Println("sender dial err:", err)
-				reconnectTimer.Reset(time.Second)
+				conn = nil
+				time.Sleep(time.Second * 1)
+				go func() { connChan <- struct{}{} }()
 			} else {
-				if writeCloseChan != nil {
-					close(writeCloseChan)
-				}
-				writeCloseChan = make(chan struct{})
 				atomic.AddInt32(&s.apnsd.numOfConnectToApns, 1)
-				go read(conn)
-				go writeLoop(conn, s.msgChan, writeCloseChan)
+				senderConn = NewSenderConn(conn)
+				connClosedChan = senderConn.Start(s.msgChan)
 			}
-		case <-msgClosedChan:
-			log.Println("sender detect msg chan seems to be closed")
-			return nil
 		case <-s.shutdown:
 			log.Println("sender receive shutdown")
-			//TODO: wait msgClosedChan for graceful shutdown.
-			conn.Close()
+			if senderConn != nil {
+				senderConn.Close()
+			}
 			return nil
 		}
 	}
 
 	panic("not reach")
+}
+
+type SenderConn struct {
+	conn           net.Conn
+	msgs           *list.List
+	mx             sync.Mutex
+	writeCloseChan chan struct{}
+	closedChan     chan struct{}
+	identifier     uint32
+	err            error
+}
+
+func NewSenderConn(conn net.Conn) *SenderConn {
+	return &SenderConn{
+		conn:           conn,
+		msgs:           list.New(),
+		writeCloseChan: make(chan struct{}, 1),
+		closedChan:     make(chan struct{}),
+		identifier:     0,
+	}
+}
+
+func (s *SenderConn) Start(msgChan chan *Msg) <-chan struct{} {
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		s.readError()
+		go func() { s.writeCloseChan <- struct{}{} }()
+		log.Println("read err done")
+	}()
+
+	go func() {
+		defer wg.Done()
+		s.err = s.writeLoop(msgChan)
+		log.Println("werite loop done")
+	}()
+
+	go func() {
+		wg.Wait()
+		close(s.closedChan)
+	}()
+
+	return s.closedChan
+}
+
+//TODO: block
+func (s *SenderConn) Close() {
+	s.conn.Close()
+	go func() { s.writeCloseChan <- struct{}{} }()
+	<-s.closedChan
+}
+
+func (s *SenderConn) readError() {
+	defer s.conn.Close()
+
+	errMsg := &ErrorMsg{}
+	if err := errMsg.Read(s.conn); err != nil {
+		log.Println("read err msg err:", err)
+	}
+
+	if errMsg.Identifier != 0 {
+		log.Printf("sender got err from apns server. command:%d status:%d identifier:%d\n", errMsg.Command, errMsg.Status, errMsg.Identifier)
+		s.mx.Lock()
+		for e := s.msgs.Front(); e != nil; e = e.Next() {
+			if e.Value.(*Msg).Identifier == errMsg.Identifier {
+				msg := e.Value.(*Msg)
+				token := hex.EncodeToString(msg.Token)
+				log.Printf("err msg: token:%s payload:%s expire:%d priority:%d identifier:%d", token, msg.Payload, msg.Expire, msg.Priority, msg.Identifier)
+				break
+			}
+		}
+		s.mx.Unlock()
+	}
+}
+
+func (s *SenderConn) writeLoop(msgChan chan *Msg) error {
+	defer s.conn.Close()
+	w := bufio.NewWriter(s.conn)
+
+	for {
+		select {
+		case msg, ok := <-msgChan:
+			if !ok { // closed
+				return ErrMsgClosed
+			}
+
+			msg.Identifier = atomic.AddUint32(&s.identifier, 1)
+
+			s.mx.Lock()
+			s.msgs.PushFront(msg)
+			if s.msgs.Len() >= 100 {
+				if e := s.msgs.Back(); e != nil {
+					s.msgs.Remove(e)
+				}
+			}
+			s.mx.Unlock()
+
+			var b bytes.Buffer
+			if err := msg.WriteWithAutotrim(&b); err != nil {
+				log.Println("msg write with autotrim err:", err)
+				continue
+			}
+
+			if _, err := w.Write(b.Bytes()); err != nil {
+				log.Println("sender write err:", err)
+				return nil
+			}
+
+			if err := w.Flush(); err != nil {
+				log.Println("sender write flush error:", err)
+				return nil
+			}
+		case <-s.writeCloseChan:
+			return nil
+		}
+	}
 }
 
 type Apnsd struct {
@@ -245,15 +321,9 @@ type Apnsd struct {
 	shutdownChan       chan struct{}
 	identifier         uint32
 	numOfConnectToApns int32
-	msgCache           *lru.Cache
 }
 
 func NewApnsd(apnsDialFunc func() (net.Conn, error)) *Apnsd {
-	msgCache, err := lru.New(1024 * 100)
-	if err != nil {
-		panic(err)
-	}
-
 	a := &Apnsd{
 		RetriverRedisNetwork: "tcp",
 		RetriverRedisAddr:    "127.0.0.1:6379",
@@ -267,8 +337,6 @@ func NewApnsd(apnsDialFunc func() (net.Conn, error)) *Apnsd {
 		MsgChanBufferNum: 10,
 
 		shutdownChan: make(chan struct{}),
-		identifier:   0,
-		msgCache:     msgCache,
 	}
 
 	return a
@@ -285,7 +353,7 @@ func (a *Apnsd) Start() {
 
 	var retriverWg sync.WaitGroup
 	retriverShutdown := make(chan struct{})
-	msgChan := make(chan []byte, a.MsgChanBufferNum)
+	msgChan := make(chan *Msg, a.MsgChanBufferNum)
 
 	for i := 0; i < a.RetriverNum; i++ {
 		log.Printf("spawn retriver %d\n", i)
@@ -321,7 +389,7 @@ func (a *Apnsd) Shutdown() {
 	a.shutdownChan <- struct{}{}
 }
 
-func (a *Apnsd) spawnRetriver(wg *sync.WaitGroup, shutdown chan struct{}, msgChan chan []byte) {
+func (a *Apnsd) spawnRetriver(wg *sync.WaitGroup, shutdown chan struct{}, msgChan chan *Msg) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -331,7 +399,7 @@ func (a *Apnsd) spawnRetriver(wg *sync.WaitGroup, shutdown chan struct{}, msgCha
 	}()
 }
 
-func (a *Apnsd) spawnSender(wg *sync.WaitGroup, shutdown chan struct{}, msgChan chan []byte) {
+func (a *Apnsd) spawnSender(wg *sync.WaitGroup, shutdown chan struct{}, msgChan chan *Msg) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -339,9 +407,4 @@ func (a *Apnsd) spawnSender(wg *sync.WaitGroup, shutdown chan struct{}, msgChan 
 		s.Start() // block
 		s.apnsd = nil
 	}()
-}
-
-func (a *Apnsd) NextIdentifier() uint32 {
-	atomic.AddUint32(&a.identifier, 1)
-	return a.identifier
 }
