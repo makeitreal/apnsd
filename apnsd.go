@@ -115,10 +115,9 @@ type Sender struct {
 	shutdown chan struct{}
 	msgChan  chan *Msg
 
-	apnsd      *Apnsd
-	msgs       *list.List
-	mx         sync.Mutex
-	identifier uint32
+	apnsd *Apnsd
+	msgs  *list.List
+	mx    sync.Mutex
 }
 
 func NewSender(shutdown chan struct{}, msgChan chan *Msg, apnsd *Apnsd) *Sender {
