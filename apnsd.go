@@ -6,6 +6,7 @@ import (
 	"container/list"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -85,13 +86,7 @@ func (r *Retriver) Start() error {
 		case <-connChan:
 			log.Println("retriver connect to redisserver")
 			var err error
-			conn, err = redis.DialTimeout(
-				r.apnsd.RetriverRedisNetwork,
-				r.apnsd.RetriverRedisAddr,
-				r.apnsd.RetriverDialTimeout,
-				0,
-				0,
-			)
+			conn, err = r.apnsd.redisDial()
 			if err != nil {
 				log.Println("redis dial err:", err)
 				reconnectTimer.Reset(time.Second)
@@ -170,7 +165,7 @@ func (s *Sender) Start() error {
 				go func() { connChan <- struct{}{} }()
 			} else {
 				atomic.AddInt32(&s.apnsd.numOfConnectToApns, 1)
-				senderConn = NewSenderConn(conn)
+				senderConn = NewSenderConn(conn, s.apnsd)
 				connClosedChan = senderConn.Start(s.msgChan)
 			}
 		case <-s.shutdown:
@@ -193,15 +188,17 @@ type SenderConn struct {
 	closedChan     chan struct{}
 	identifier     uint32
 	err            error
+	apnsd          *Apnsd
 }
 
-func NewSenderConn(conn net.Conn) *SenderConn {
+func NewSenderConn(conn net.Conn, apnsd *Apnsd) *SenderConn {
 	return &SenderConn{
 		conn:           conn,
 		msgs:           list.New(),
 		writeCloseChan: make(chan struct{}, 1),
 		closedChan:     make(chan struct{}),
 		identifier:     0,
+		apnsd:          apnsd,
 	}
 }
 
@@ -236,6 +233,7 @@ func (s *SenderConn) Close() {
 	s.conn.Close()
 	go func() { s.writeCloseChan <- struct{}{} }()
 	<-s.closedChan
+	s.apnsd = nil
 }
 
 func (s *SenderConn) readError() {
@@ -249,16 +247,46 @@ func (s *SenderConn) readError() {
 	if errMsg.Identifier != 0 {
 		log.Printf("sender got err from apns server. command:%d status:%d identifier:%d\n", errMsg.Command, errMsg.Status, errMsg.Identifier)
 		s.mx.Lock()
+		var msg *Msg
 		for e := s.msgs.Front(); e != nil; e = e.Next() {
 			if e.Value.(*Msg).Identifier == errMsg.Identifier {
-				msg := e.Value.(*Msg)
+				msg = e.Value.(*Msg)
 				token := hex.EncodeToString(msg.Token)
 				log.Printf("err msg: token:%s payload:%s expire:%d priority:%d identifier:%d", token, msg.Payload, msg.Expire, msg.Priority, msg.Identifier)
 				break
 			}
 		}
 		s.mx.Unlock()
+
+		if msg != nil {
+			if err := s.lpushFailedMsg(&FailedMsg{msg, errMsg.Status}); err != nil {
+				log.Println(err)
+			}
+		}
 	}
+}
+
+func (s *SenderConn) lpushFailedMsg(f *FailedMsg) error {
+	var b bytes.Buffer
+	if err := codec.NewEncoder(&b, &codec.MsgpackHandle{}).Encode(f); err != nil {
+		return fmt.Errorf("encode failed msg err:%s", err)
+	}
+
+	r, err := s.apnsd.redisDial()
+	defer r.Close()
+
+	if err != nil {
+		return fmt.Errorf("redis dial err for lpush failed msg:%s", err)
+	}
+
+	if _, err := r.Do("LPUSH", s.apnsd.SenderFailedMsgKey, b.Bytes()); err != nil {
+		return fmt.Errorf("lpush err for failed msg:%s", err)
+	}
+	if _, err := r.Do("LTRIM", s.apnsd.SenderFailedMsgKey, "0", "99"); err != nil {
+		return fmt.Errorf("lpush err for failed msg:%s", err)
+	}
+
+	return nil
 }
 
 func (s *SenderConn) writeLoop(msgChan chan *Msg) error {
@@ -313,8 +341,9 @@ type Apnsd struct {
 	RetriverDialTimeout  time.Duration
 
 	// Apns ( sender )
-	SenderNum      int
-	SenderDialFunc func() (net.Conn, error)
+	SenderNum          int
+	SenderDialFunc     func() (net.Conn, error)
+	SenderFailedMsgKey string
 
 	// other
 	MsgChanBufferNum   int
@@ -331,8 +360,9 @@ func NewApnsd(apnsDialFunc func() (net.Conn, error)) *Apnsd {
 		RetriveKey:           "APNSD:MSG_QUEUE",
 		RetriverDialTimeout:  time.Second * 5,
 
-		SenderNum:      1,
-		SenderDialFunc: apnsDialFunc,
+		SenderNum:          1,
+		SenderDialFunc:     apnsDialFunc,
+		SenderFailedMsgKey: "APNSD:FAILED_MSG_QUEUE",
 
 		MsgChanBufferNum: 10,
 
@@ -407,4 +437,14 @@ func (a *Apnsd) spawnSender(wg *sync.WaitGroup, shutdown chan struct{}, msgChan 
 		s.Start() // block
 		s.apnsd = nil
 	}()
+}
+
+func (a *Apnsd) redisDial() (redis.Conn, error) {
+	return redis.DialTimeout(
+		a.RetriverRedisNetwork,
+		a.RetriverRedisAddr,
+		a.RetriverDialTimeout,
+		0,
+		0,
+	)
 }
