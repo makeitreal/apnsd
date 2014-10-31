@@ -15,7 +15,9 @@ import (
 var (
 	prod = flag.Bool("prod", false, "connect to prod apns server")
 
-	redisKeyName = flag.String("redisKeyName", "", "key name of redis")
+	redisKeyName       = flag.String("redisKeyName", "", "key name of redis")
+	redisFailedKeyName = flag.String("redisFailedKeyName", "", "failed key name of redis")
+
 	redisNetwork = flag.String("redisNetwork", "tcp", "network of redis")
 	redisAddr    = flag.String("redisAddr", "127.0.0.1:6379", "address of redis")
 
@@ -49,6 +51,10 @@ func main() {
 
 	if *redisKeyName != "" {
 		a.RetriveKey = *redisKeyName
+	}
+
+	if *redisFailedKeyName != "" {
+		a.SenderFailedMsgKey = *redisFailedKeyName
 	}
 
 	if *redisNetwork != "" {

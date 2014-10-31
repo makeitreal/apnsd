@@ -196,3 +196,8 @@ func Int(v int) *int {
 	*i = v
 	return i
 }
+
+type FailedMsg struct {
+	*Msg
+	Status uint8 `codec:"status"`
+}
