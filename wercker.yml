@@ -23,6 +23,6 @@ build:
 
   after-steps:
     - wantedly/pretty-slack-notify:
-        team: makeitreal
+        team: $SLACK_TEAM
         token: $SLACK_TOKEN
         channel: general
