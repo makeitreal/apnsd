@@ -2,6 +2,8 @@
 
 apns + redis = apnsd
 
+**in developing, it is still alpha quality**
+
 ## usage
 
 ```
